@@ -234,6 +234,7 @@ class UpdaterPage(_AsyncPage, Gtk.Box):
         self.append(scroll)
         self._model = Gtk.ListStore(bool, str, str, str, str)
         view = Gtk.TreeView(model=self._model)
+        self._view = view
         toggle = Gtk.CellRendererToggle()
         toggle.connect("toggled", self._toggle)
         view.append_column(Gtk.TreeViewColumn("", toggle, active=0))
@@ -243,7 +244,17 @@ class UpdaterPage(_AsyncPage, Gtk.Box):
             column.set_resizable(True)
             column.set_expand(expand)
             view.append_column(column)
-        scroll.set_child(view)
+        self._empty = Gtk.Label(
+            label="No pending updates.\nPacman, Omarchy, AUR and Flatpak are current.",
+            justify=Gtk.Justification.CENTER,
+            vexpand=True,
+        )
+        self._empty.add_css_class("dim-label")
+        stack = Gtk.Stack()
+        stack.add_named(view, "list")
+        stack.add_named(self._empty, "empty")
+        self._stack = stack
+        scroll.set_child(stack)
         GLib.idle_add(self.refresh)
 
     def _toggle(self, _renderer, path: str) -> None:
@@ -263,7 +274,13 @@ class UpdaterPage(_AsyncPage, Gtk.Box):
             for item in items:
                 self._model.append([False, item.manager, item.package, item.current, item.available])
             suffix = f" · {len(errors)} warning(s)" if errors else ""
-            self._status.set_label(f"{len(items)} update(s) available{suffix}")
+            if items:
+                self._stack.set_visible_child_name("list")
+                self._status.set_label(f"{len(items)} update(s) available{suffix}")
+            else:
+                self._stack.set_visible_child_name("empty")
+                warn = f" ({len(errors)} warning(s))" if errors else ""
+                self._status.set_label(f"Up to date — Pacman / Omarchy / AUR / Flatpak{warn}")
 
         self._start(updater.list_updates, done)
 

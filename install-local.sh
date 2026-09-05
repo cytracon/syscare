@@ -80,6 +80,13 @@ if command -v gtk-update-icon-cache >/dev/null; then
   gtk-update-icon-cache -f -t "$ICON_BASE" 2>/dev/null || true
 fi
 
+# Point leftover Ubuntu autostart /usr/bin/syscare at the Omarchy build.
+AUTOSTART="${XDG_CONFIG_HOME:-$HOME/.config}/autostart/com.bbachmann.syscare-tray.desktop"
+if [[ -f "$AUTOSTART" ]] && grep -q '/usr/bin/syscare' "$AUTOSTART"; then
+  sed -i "s|^Exec=.*|Exec=$BIN_DIR/${PKG_NAME} --tray|" "$AUTOSTART"
+  echo "==> Rewrote Ubuntu autostart launcher → $BIN_DIR/${PKG_NAME} --tray"
+fi
+
 echo
 echo "Installed:"
 echo "  binary : $BIN_DIR/${PKG_NAME}"

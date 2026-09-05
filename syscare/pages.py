@@ -1283,6 +1283,15 @@ class UninstallerPage(_PageBase, Gtk.Box):
         self._fmodel = self._model.filter_new()
         self._fmodel.set_visible_func(self._visible)
         self._view = Gtk.TreeView(model=self._fmodel)
+        self._empty = Gtk.Label(
+            label="No packages listed.\nOn Omarchy this page reads pacman (expac), not dpkg.",
+            justify=Gtk.Justification.CENTER,
+            vexpand=True,
+        )
+        self._empty.add_css_class("dim-label")
+        self._stack = Gtk.Stack()
+        self._stack.add_named(self._view, "list")
+        self._stack.add_named(self._empty, "empty")
         # checkbox column
         toggle = Gtk.CellRendererToggle()
         toggle.connect("toggled", self._on_toggled)
@@ -1300,7 +1309,7 @@ class UninstallerPage(_PageBase, Gtk.Box):
             col.set_expand(expand)
             col.set_sort_column_id(i)
             self._view.append_column(col)
-        scroll.set_child(self._view)
+        scroll.set_child(self._stack)
         GLib.idle_add(self.refresh)
 
     def _on_search(self, entry: Gtk.SearchEntry) -> None:
@@ -1343,7 +1352,12 @@ class UninstallerPage(_PageBase, Gtk.Box):
                             p.description,
                         ]
                     )
-                self._status.set_label(f"{len(pkgs)} packages")
+                if pkgs:
+                    self._stack.set_visible_child_name("list")
+                    self._status.set_label(f"{len(pkgs)} pacman packages")
+                else:
+                    self._stack.set_visible_child_name("empty")
+                    self._status.set_label("No pacman packages found")
 
             self._idle(ui)
 

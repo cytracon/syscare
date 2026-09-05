@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from . import __app_id__, __app_name__
@@ -28,14 +29,17 @@ def is_enabled() -> bool:
 
 
 def _syscare_exec() -> str:
-    # Prefer real binary on PATH
+    # Always prefer the Omarchy user-local build. The leftover Ubuntu
+    # launcher at /usr/bin/syscare still talks to APT/dpkg.
+    local = Path.home() / ".local/bin/syscare"
+    if local.is_file() and os.access(local, os.X_OK):
+        return str(local)
     w = which("syscare")
+    if w and Path(w).resolve() != Path("/usr/bin/syscare"):
+        return w
     if w:
         return w
-    local = Path.home() / ".local/bin/syscare"
-    if local.is_file():
-        return str(local)
-    return "/usr/bin/syscare"
+    return str(local)
 
 
 def enable() -> tuple[bool, str]:

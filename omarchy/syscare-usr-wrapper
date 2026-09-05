@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Replaces the leftover Ubuntu /usr/bin/syscare launcher on Omarchy.
+# Always exec the user-local build; never the APT/dpkg tree under /usr/lib/syscare.
+set -euo pipefail
+LOCAL="${HOME}/.local/bin/syscare"
+if [[ -x "$LOCAL" ]]; then
+  exec "$LOCAL" "$@"
+fi
+echo "syscare: Omarchy build not found at $LOCAL" >&2
+echo "Install with:  omarchy install syscare" >&2
+exit 1
