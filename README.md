@@ -1,6 +1,8 @@
 # SysCare
 
-System optimizer and monitor for **Omarchy** (Arch Linux + Hyprland). GTK4 + libadwaita, Python. Replaces the old Ubuntu/Stacer build.
+**What it is.** SysCare is a system optimizer for **Omarchy** (Arch Linux + Hyprland). Use it like Stacer: clean caches, check pacman/Omarchy/AUR/Flatpak updates, inspect processes and services, review security (firewall, lock screen, SSH), and uninstall packages. Privileged steps go through pkexec.
+
+GTK4 + libadwaita, Python. Replaces the old Ubuntu/Stacer build.
 
 The Omarchy bar plugin is a separate repository: [cytracon/omarchy-syscare](https://github.com/cytracon/omarchy-syscare).
 
