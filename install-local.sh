@@ -98,3 +98,16 @@ echo "Start with:  ${PKG_NAME}"
 if [[ ":$PATH:" != *":$BIN_DIR:"* ]]; then
   echo "  PATH tip: export PATH=\"$BIN_DIR:\$PATH\""
 fi
+
+PLUGIN_ID="io.github.cytracon.syscare"
+PLUGIN_URL="https://github.com/cytracon/omarchy-syscare.git"
+PLUGIN_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/plugins/${PLUGIN_ID}"
+if command -v omarchy >/dev/null 2>&1; then
+  if [[ -d "$PLUGIN_DIR" ]]; then
+    omarchy plugin enable "$PLUGIN_ID" --section right >/dev/null 2>&1 || true
+    echo "==> Bar plugin $PLUGIN_ID enabled"
+  elif omarchy plugin add "$PLUGIN_URL" --enable --yes; then
+    omarchy bar move "$PLUGIN_ID" --section right >/dev/null 2>&1 || true
+    echo "==> Bar plugin $PLUGIN_ID installed"
+  fi
+fi

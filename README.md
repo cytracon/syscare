@@ -4,7 +4,7 @@
 
 GTK4 + libadwaita, Python. Replaces the old Ubuntu/Stacer build.
 
-The Omarchy bar plugin is a separate repository: [cytracon/omarchy-syscare](https://github.com/cytracon/omarchy-syscare).
+`omarchy install syscare` installs the GTK app **and** enables the bar plugin ([cytracon/omarchy-syscare](https://github.com/cytracon/omarchy-syscare)).
 
 ## Install on Omarchy
 
