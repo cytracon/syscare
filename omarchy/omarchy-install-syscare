@@ -56,7 +56,7 @@ install_omarchy_cli() {
   local src dest wrap
   src="${HERE}/omarchy-install-syscare"
   dest="${PREFIX}/bin/omarchy-install-syscare"
-  if [[ -f "$src" ]]; then
+  if [[ -f "$src" && "$(readlink -f "$src")" != "$(readlink -f "$dest" 2>/dev/null || true)" ]]; then
     cp -f "$src" "$dest"
     chmod 755 "$dest"
   fi
