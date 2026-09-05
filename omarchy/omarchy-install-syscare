@@ -1,0 +1,98 @@
+#!/bin/bash
+# omarchy:group=install
+# omarchy:name=syscare
+# omarchy:summary=Install SysCare (Omarchy system optimizer) into ~/.local.
+# omarchy:examples=omarchy install syscare
+# omarchy:aliases=omarchy-install-syscare
+
+# User-local. Does not touch /usr/share/omarchy.
+
+set -euo pipefail
+
+PREFIX="${SYSCARE_PREFIX:-$HOME/.local}"
+REPO="${SYSCARE_REPO:-cytracon/syscare}"
+WEB="https://github.com/${REPO}"
+
+log() { printf '\033[36m[syscare]\033[0m %s\n' "$*"; }
+ok()  { printf '\033[32m[syscare]\033[0m %s\n' "$*"; }
+err() { printf '\033[31m[syscare]\033[0m %s\n' "$*" >&2; }
+die() { err "$*"; exit 2; }
+
+HERE="$(cd "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+
+find_installer() {
+  local f
+  for f in \
+    "${HERE}/../install-local.sh" \
+    "${PREFIX}/share/syscare/install-local.sh" \
+    "${HERE}/install-local.sh"
+  do
+    [[ -f "$f" ]] && { echo "$f"; return 0; }
+  done
+  return 1
+}
+
+ensure_sources() {
+  local dest tmp
+  dest="${PREFIX}/share/syscare-src"
+  if src="$(find_installer)"; then
+    ROOT="$(cd "$(dirname "$src")" && pwd)"
+    echo "$ROOT"
+    return 0
+  fi
+  command -v git >/dev/null 2>&1 || die "git is required to clone ${REPO}"
+  mkdir -p "${PREFIX}/share"
+  tmp="$(mktemp -d)"
+  log "Cloning ${WEB}…"
+  git clone --depth 1 "https://github.com/${REPO}.git" "$tmp/syscare" || {
+    rm -rf "$tmp"
+    die "Clone failed: ${WEB}"
+  }
+  echo "$tmp/syscare"
+}
+
+install_omarchy_cli() {
+  mkdir -p "${PREFIX}/bin"
+  local src dest wrap
+  src="${HERE}/omarchy-install-syscare"
+  dest="${PREFIX}/bin/omarchy-install-syscare"
+  if [[ -f "$src" ]]; then
+    cp -f "$src" "$dest"
+    chmod 755 "$dest"
+  fi
+  wrap="${HERE}/omarchy-user-cli"
+  if [[ -f "$wrap" ]]; then
+    cp -f "$wrap" "${PREFIX}/bin/omarchy"
+    chmod 755 "${PREFIX}/bin/omarchy"
+  fi
+}
+
+main() {
+  case "${1:-}" in
+    -h|--help)
+      cat <<'EOF'
+Usage: omarchy install syscare
+
+Install SysCare into ~/.local (no root unless packages are missing).
+GTK4 + libadwaita system optimizer for Omarchy.
+
+Also accepted:
+  omarchy-install-syscare
+EOF
+      exit 0
+      ;;
+  esac
+
+  log "SysCare for Omarchy"
+  install_omarchy_cli
+  ROOT="$(ensure_sources)"
+  bash "$ROOT/install-local.sh"
+  if command -v omarchy-notification-send >/dev/null 2>&1; then
+    omarchy-notification-send -g 󰒓 "SysCare installed" "Launch from the bar plugin or run syscare" || true
+  fi
+  ok "Fertig. Start: syscare"
+  ok "Plugin: omarchy plugin add https://github.com/cytracon/omarchy-syscare.git --enable"
+  ok "Docs: ${WEB}"
+}
+
+main "$@"

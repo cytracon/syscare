@@ -1,0 +1,3 @@
+# SysCare uses distro packages on Omarchy / Arch:
+#   python python-gobject python-psutil gtk4 libadwaita pacman-contrib polkit
+# No pip packages required.

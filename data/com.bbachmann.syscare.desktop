@@ -1,0 +1,14 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=SysCare
+GenericName=System Maintenance Suite
+Comment=Clean, secure, update and monitor Omarchy
+Exec=syscare
+Icon=com.bbachmann.syscare
+Terminal=false
+Categories=System;Monitor;
+Keywords=Cleaner;Security;Malware;Updates;Storage;Network;Monitor;Processes;Services;Tray;
+StartupNotify=true
+StartupWMClass=com.bbachmann.syscare
+X-GNOME-UsesNotifications=true
