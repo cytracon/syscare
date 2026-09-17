@@ -484,8 +484,13 @@ class CleanResult:
 
 
 def clean_targets(targets: list[CleanTarget]) -> list[CleanResult]:
-    """Clean selected targets. All root ops share a single pkexec (one password)."""
-    selected = [t for t in targets if t.selected]
+    """Clean the given targets. All root ops share a single pkexec (one password).
+
+    Callers pass the targets they already chose. `.selected` is only a UI flag
+    and is not re-checked here, so a later checkbox rebuild cannot drop work
+    the user already confirmed.
+    """
+    selected = list(targets)
     if not selected:
         return []
 
@@ -570,10 +575,6 @@ def _clean_root_batch(targets: list[CleanTarget]) -> list[CleanResult]:
             apt = which("apt-get") or which("apt") or "apt-get"
             script_lines.append(f"{sh_quote(apt)} clean")
             script_lines.append(f"rc=$?; echo SYSCARE_RC:{tid}:$rc")
-        elif t.kind == "pkgcache":
-            pacman = which("pacman") or "pacman"
-            script_lines.append(f"{sh_quote(pacman)} -Sc --noconfirm")
-            script_lines.append(f"rc=$?; echo SYSCARE_RC:{tid}:$rc")
         elif t.kind == "journal":
             jctl = which("journalctl") or "journalctl"
             script_lines.append(f"{sh_quote(jctl)} --vacuum-size=50M")
@@ -598,12 +599,17 @@ def _clean_root_batch(targets: list[CleanTarget]) -> list[CleanResult]:
                 script_lines.append(f"rc=$?; echo SYSCARE_RC:{tid}:$rc")
                 script_lines.append(f"echo SYSCARE_MSG:{tid}:removed-{len(orphan_pkgs)}")
         else:
-            # path clean (e.g. /var/crash)
+            # path clean (e.g. /var/crash, pacman pkg cache). Wipe directory
+            # contents so the reclaimed size matches what the scan displayed.
+            # `pacman -Sc` only drops uninstalled packages and can leave GB.
             script_lines.append("rc=0")
             for p in t.paths:
                 quoted = sh_quote(str(p))
                 script_lines.append(f"if [ -L {quoted} ]; then rc=1")
-                script_lines.append(f"elif [ -d {quoted} ]; then find {quoted} -mindepth 1 -maxdepth 1 -exec rm -rf -- {{}} + || rc=$?")
+                script_lines.append(
+                    f"elif [ -d {quoted} ]; then chmod -R u+w {quoted} 2>/dev/null; "
+                    f"find {quoted} -mindepth 1 -maxdepth 1 -exec rm -rf -- {{}} + || rc=$?"
+                )
                 script_lines.append(f"elif [ -f {quoted} ]; then rm -f -- {quoted} || rc=$?")
                 script_lines.append("fi")
             script_lines.append(f"echo SYSCARE_RC:{tid}:$rc")
@@ -687,15 +693,6 @@ def _clean_root_step_local(t: CleanTarget) -> CleanResult:
         if r.returncode != 0:
             return CleanResult(t.id, False, (r.stderr or r.stdout or "apt clean failed")[:400], 0)
         return CleanResult(t.id, True, "APT cache cleaned", max(0, before - _apt_cache_size()))
-    if t.kind == "pkgcache":
-        pacman = which("pacman")
-        if not pacman:
-            return CleanResult(t.id, False, "pacman not found", 0)
-        before = t.size
-        r = run([pacman, "-Sc", "--noconfirm"], timeout=180)
-        if r.returncode != 0:
-            return CleanResult(t.id, False, (r.stderr or r.stdout or "pacman -Sc failed")[:400], 0)
-        return CleanResult(t.id, True, "Pacman cache cleaned", max(0, before - _pacman_cache_size()))
     if t.kind == "journal":
         jctl = which("journalctl")
         if not jctl:

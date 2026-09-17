@@ -475,6 +475,7 @@ class CleanerPage(_PageBase, Gtk.Box):
         self._size_labels: dict[str, Gtk.Label] = {}
         self._title_labels: dict[str, Gtk.Label] = {}
         self._scanning = False
+        self._rebuilding = False
 
         toolbar = Gtk.Box(spacing=8)
         toolbar.set_margin_top(12)
@@ -578,17 +579,22 @@ class CleanerPage(_PageBase, Gtk.Box):
                     self._status.set_label(f"Scan failed: {err[:120]}")
                     _toast(self._toast, "Scan failed")
                     return
-                total = sum(t.size for t in self._targets if t.kind != "residual")
+                counted = {"residual", "orphans"}
+                total = sum(t.size for t in self._targets if t.kind not in counted)
+                extra_bits: list[str] = []
                 residual = next((t for t in self._targets if t.kind == "residual"), None)
-                extra = ""
+                orphans = next((t for t in self._targets if t.kind == "orphans"), None)
                 if residual and residual.size:
-                    extra = f" · {residual.size} residual pkgs"
+                    extra_bits.append(f"{residual.size} residual pkgs")
+                if orphans and orphans.size:
+                    extra_bits.append(f"{orphans.size} orphan pkgs")
+                extra = f" · {' · '.join(extra_bits)}" if extra_bits else ""
                 self._status.set_label(
                     f"Scan done · ~{human_bytes(total)} reclaimable{extra}"
                 )
                 _toast(self._toast, f"Scan done · ~{human_bytes(total)}")
-                # refresh residual title etc.
-                self._rebuild(measuring=False)
+                # Do not rebuild the list here: destroying CheckButtons can emit
+                # toggled(False) and uncheck targets the user already selected.
 
             self._idle(ui_done)
 
@@ -604,7 +610,7 @@ class CleanerPage(_PageBase, Gtk.Box):
         sl = self._size_labels.get(t.id)
         if sl is None:
             return
-        if t.kind == "residual":
+        if t.kind in {"residual", "orphans"}:
             sl.set_label(f"{t.size} pkgs")
         else:
             sl.set_label(human_bytes(t.size))
@@ -613,64 +619,70 @@ class CleanerPage(_PageBase, Gtk.Box):
             tl.set_label(t.title)
 
     def _rebuild(self, *, measuring: bool = False) -> None:
-        while True:
-            row = self._list.get_row_at_index(0)
-            if row is None:
-                break
-            self._list.remove(row)
-        self._checks.clear()
-        self._size_labels.clear()
-        self._title_labels.clear()
+        self._rebuilding = True
+        try:
+            while True:
+                row = self._list.get_row_at_index(0)
+                if row is None:
+                    break
+                self._list.remove(row)
+            self._checks.clear()
+            self._size_labels.clear()
+            self._title_labels.clear()
 
-        has_targets = bool(self._targets)
-        self._select_all_btn.set_sensitive(has_targets)
-        self._deselect_all_btn.set_sensitive(has_targets)
+            has_targets = bool(self._targets)
+            self._select_all_btn.set_sensitive(has_targets)
+            self._deselect_all_btn.set_sensitive(has_targets)
 
-        for t in self._targets:
-            row = Gtk.ListBoxRow()
-            row.set_activatable(False)
-            box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
-            box.set_margin_top(10)
-            box.set_margin_bottom(10)
-            box.set_margin_start(12)
-            box.set_margin_end(12)
-            cb = Gtk.CheckButton(active=t.selected)
-            self._checks[t.id] = cb
+            for t in self._targets:
+                row = Gtk.ListBoxRow()
+                row.set_activatable(False)
+                box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+                box.set_margin_top(10)
+                box.set_margin_bottom(10)
+                box.set_margin_start(12)
+                box.set_margin_end(12)
+                cb = Gtk.CheckButton(active=t.selected)
+                self._checks[t.id] = cb
 
-            def on_toggled(btn: Gtk.CheckButton, target=t) -> None:
-                target.selected = btn.get_active()
+                def on_toggled(btn: Gtk.CheckButton, target=t) -> None:
+                    if self._rebuilding:
+                        return
+                    target.selected = btn.get_active()
 
-            cb.connect("toggled", on_toggled)
-            box.append(cb)
-            col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2, hexpand=True)
-            title = Gtk.Label(label=t.title, xalign=0)
-            title.add_css_class("heading")
-            self._title_labels[t.id] = title
-            sub = t.description or ""
-            if t.needs_root:
-                sub = f"[root] {sub}"
-            sub = f"[{t.category} · {t.risk}] {sub}"
-            desc = Gtk.Label(label=sub, xalign=0)
-            desc.add_css_class("dim-label")
-            desc.add_css_class("caption")
-            desc.set_ellipsize(Pango.EllipsizeMode.END)
-            col.append(title)
-            col.append(desc)
-            box.append(col)
-            if measuring and t.size == 0 and t.kind not in ("residual",):
-                size_txt = "…"
-            elif t.kind == "residual":
-                size_txt = f"{t.size} pkgs"
-            else:
-                size_txt = human_bytes(t.size)
-            sl = Gtk.Label(label=size_txt)
-            sl.add_css_class("numeric")
-            sl.set_width_chars(10)
-            sl.set_xalign(1.0)
-            self._size_labels[t.id] = sl
-            box.append(sl)
-            row.set_child(box)
-            self._list.append(row)
+                cb.connect("toggled", on_toggled)
+                box.append(cb)
+                col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2, hexpand=True)
+                title = Gtk.Label(label=t.title, xalign=0)
+                title.add_css_class("heading")
+                self._title_labels[t.id] = title
+                sub = t.description or ""
+                if t.needs_root:
+                    sub = f"[root] {sub}"
+                sub = f"[{t.category} · {t.risk}] {sub}"
+                desc = Gtk.Label(label=sub, xalign=0)
+                desc.add_css_class("dim-label")
+                desc.add_css_class("caption")
+                desc.set_ellipsize(Pango.EllipsizeMode.END)
+                col.append(title)
+                col.append(desc)
+                box.append(col)
+                if measuring and t.size == 0 and t.kind not in {"residual", "orphans"}:
+                    size_txt = "…"
+                elif t.kind in {"residual", "orphans"}:
+                    size_txt = f"{t.size} pkgs"
+                else:
+                    size_txt = human_bytes(t.size)
+                sl = Gtk.Label(label=size_txt)
+                sl.add_css_class("numeric")
+                sl.set_width_chars(10)
+                sl.set_xalign(1.0)
+                self._size_labels[t.id] = sl
+                box.append(sl)
+                row.set_child(box)
+                self._list.append(row)
+        finally:
+            self._rebuilding = False
 
     def _set_all_selected(self, selected: bool) -> None:
         for target in self._targets:
@@ -683,6 +695,10 @@ class CleanerPage(_PageBase, Gtk.Box):
         self._status.set_label(f"{selected_count}/{len(self._targets)} targets selected")
 
     def clean(self) -> None:
+        for target in self._targets:
+            check = self._checks.get(target.id)
+            if check is not None:
+                target.selected = bool(check.get_active())
         selected = [t for t in self._targets if t.selected]
         if not selected:
             _toast(self._toast, "Nothing selected")
@@ -690,7 +706,7 @@ class CleanerPage(_PageBase, Gtk.Box):
         lines = []
         total = 0
         for t in selected:
-            if t.kind == "residual":
+            if t.kind in {"residual", "orphans"}:
                 lines.append(f"• {t.title}")
             else:
                 total += t.size
@@ -737,7 +753,11 @@ class CleanerPage(_PageBase, Gtk.Box):
                     "warning" if fails else "ok",
                     self._status.get_label(),
                     reclaimed=freed,
-                    details={"targets": len(selected), "failures": len(fails)},
+                    details={
+                        "targets": len(selected),
+                        "failures": len(fails),
+                        "failure_messages": [r.message for r in fails[:10]],
+                    },
                 )
                 self._clean_btn.set_sensitive(True)
                 self.scan()

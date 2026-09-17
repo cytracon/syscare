@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import stat
 import subprocess
 from pathlib import Path
 from typing import Iterable, Sequence
@@ -65,7 +66,12 @@ def run_privileged(
     pk = which("pkexec")
     if not pk:
         raise RuntimeError("pkexec not found — cannot elevate privileges")
-    return run([pk, *cmd], timeout=timeout)
+    prog = list(cmd)
+    if prog:
+        resolved = which(prog[0]) or prog[0]
+        if os.path.isabs(resolved):
+            prog[0] = resolved
+    return run([pk, *prog], timeout=timeout)
 
 
 def dir_size(path: Path, *, max_entries: int = 200_000) -> int:
@@ -134,29 +140,78 @@ def safe_rm_tree(path: Path) -> tuple[bool, str]:
 
 
 def empty_dir_contents(path: Path) -> tuple[int, list[str]]:
-    """Delete children of path, keep the directory. Returns (bytes_freed_estimate, errors)."""
+    """Delete children of path, keep the directory. Returns (bytes_freed_estimate, errors).
+
+    Walks file-by-file so one locked or mode-000 child does not abort a whole
+    subtree the way shutil.rmtree does. Symlinks are unlinked, never followed.
+    """
     errors: list[str] = []
     freed = 0
     if path.is_symlink():
         return 0, [f"refusing to follow symlink: {path}"]
     if not path.is_dir():
         return 0, [f"not a directory: {path}"]
-    for child in list(path.iterdir()):
+
+    def _try_chmod(node: Path) -> None:
         try:
-            if child.is_symlink() or child.is_file():
-                try:
-                    freed += child.stat().st_size
-                except OSError:
-                    pass
-                child.unlink(missing_ok=True)
-            elif child.is_dir():
-                try:
-                    freed += dir_size(child)
-                except OSError:
-                    pass
-                shutil.rmtree(child, ignore_errors=False)
+            node.chmod(0o700)
+        except OSError:
+            pass
+
+    def _delete(node: Path) -> None:
+        nonlocal freed
+        try:
+            st = node.lstat()
+        except OSError as e:
+            errors.append(f"{node}: {e}")
+            return
+        is_link = stat.S_ISLNK(st.st_mode)
+        is_dir = stat.S_ISDIR(st.st_mode) and not is_link
+        try:
+            if is_dir:
+                _empty(node, keep_dir=False)
+                return
+            freed += int(st.st_size)
+            node.unlink(missing_ok=True)
+        except PermissionError:
+            _try_chmod(node)
+            try:
+                if is_dir:
+                    _empty(node, keep_dir=False)
+                    return
+                node.unlink(missing_ok=True)
+            except Exception as e:  # noqa: BLE001
+                errors.append(f"{node}: {e}")
         except Exception as e:  # noqa: BLE001
-            errors.append(f"{child}: {e}")
+            errors.append(f"{node}: {e}")
+
+    def _empty(dirpath: Path, *, keep_dir: bool) -> None:
+        try:
+            children = list(dirpath.iterdir())
+        except PermissionError:
+            _try_chmod(dirpath)
+            try:
+                children = list(dirpath.iterdir())
+            except Exception as e:  # noqa: BLE001
+                errors.append(f"{dirpath}: {e}")
+                return
+        except OSError as e:
+            errors.append(f"{dirpath}: {e}")
+            return
+        for child in children:
+            _delete(child)
+        if keep_dir:
+            return
+        try:
+            dirpath.rmdir()
+        except OSError:
+            _try_chmod(dirpath)
+            try:
+                dirpath.rmdir()
+            except OSError as e:
+                errors.append(f"{dirpath}: {e}")
+
+    _empty(path, keep_dir=True)
     return freed, errors
 
 

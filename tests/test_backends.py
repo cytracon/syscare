@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest import mock
 
 from syscare import cleaner, history, security, storage_tools, updater
-from syscare.util import empty_dir_contents
+from syscare.util import empty_dir_contents, run_privileged
 
 
 class CleanerCatalogueTests(unittest.TestCase):
@@ -68,6 +68,70 @@ class StorageTests(unittest.TestCase):
             self.assertTrue(errors)
             self.assertTrue(marker.exists())
 
+    def test_cleaner_deletes_unreadable_subdir(self) -> None:
+        with tempfile.TemporaryDirectory(dir="/tmp") as temp:
+            root = Path(temp)
+            sub = root / "sub"
+            sub.mkdir()
+            secret = sub / "file"
+            secret.write_text("data")
+            os.chmod(sub, 0o000)
+            try:
+                _freed, _errors = empty_dir_contents(root)
+            finally:
+                if sub.exists():
+                    os.chmod(sub, 0o700)
+            self.assertFalse(secret.exists())
+            self.assertFalse(sub.exists())
+            self.assertTrue(root.exists())
+
+    def test_clean_targets_honors_passed_list_not_selected_flag(self) -> None:
+        with tempfile.TemporaryDirectory(dir="/tmp") as temp:
+            cache = Path(temp) / "cache"
+            cache.mkdir()
+            payload = cache / "blob"
+            payload.write_text("hello")
+            target = cleaner.CleanTarget(
+                id="test-cache",
+                title="Test cache",
+                description="",
+                paths=[cache],
+                selected=False,
+                kind="path",
+            )
+            results = cleaner.clean_targets([target])
+            self.assertEqual(len(results), 1)
+            self.assertTrue(results[0].ok)
+            self.assertFalse(payload.exists())
+            self.assertTrue(cache.exists())
+
+    def test_root_batch_wipes_pacman_cache_dir_not_sc(self) -> None:
+        target = cleaner.CleanTarget(
+            id="pacman-cache",
+            title="Pacman Package Cache",
+            description="",
+            paths=[Path("/var/cache/pacman/pkg")],
+            needs_root=True,
+            selected=True,
+            kind="pkgcache",
+        )
+        captured: dict[str, str] = {}
+
+        def fake_privileged(cmd, timeout=None):  # noqa: ARG001
+            captured["script"] = cmd[2]
+            return mock.Mock(returncode=0, stdout="SYSCARE_BEGIN:pacman-cache\nSYSCARE_RC:pacman-cache:0\nSYSCARE_END:pacman-cache\n", stderr="")
+
+        with mock.patch("syscare.cleaner.run_privileged", side_effect=fake_privileged), mock.patch(
+            "syscare.cleaner._pacman_cache_size", return_value=0
+        ), mock.patch("syscare.cleaner.os.geteuid", return_value=1):
+            results = cleaner._clean_root_batch([target])
+        self.assertEqual(len(results), 1)
+        self.assertTrue(results[0].ok)
+        script = captured.get("script", "")
+        self.assertNotIn(" -Sc ", script)
+        self.assertIn("find '/var/cache/pacman/pkg'", script)
+        self.assertIn("rm -rf", script)
+
 
 class UpdaterTests(unittest.TestCase):
     @mock.patch("syscare.updater.which")
@@ -92,6 +156,22 @@ class UpdaterTests(unittest.TestCase):
         self.assertEqual(items[0].manager, "Pacman")
         self.assertEqual(items[0].package, "linux")
         self.assertEqual(items[0].available, "6.16.2-1")
+
+
+class PrivilegedExecTests(unittest.TestCase):
+    @mock.patch("syscare.util.run")
+    @mock.patch("syscare.util.which")
+    @mock.patch("syscare.util.os.geteuid", return_value=1)
+    def test_pkexec_uses_absolute_program_path(self, _euid, which_mock, run_mock) -> None:
+        def which_side(name: str) -> str | None:
+            return {"pkexec": "/usr/bin/pkexec", "bash": "/usr/bin/bash"}.get(name)
+
+        which_mock.side_effect = which_side
+        run_mock.return_value = mock.Mock(returncode=0, stdout="", stderr="")
+        run_privileged(["bash", "-c", "echo hi"])
+        run_mock.assert_called_once()
+        cmd = run_mock.call_args[0][0]
+        self.assertEqual(cmd[:3], ["/usr/bin/pkexec", "/usr/bin/bash", "-c"])
 
 
 class SecurityTests(unittest.TestCase):
