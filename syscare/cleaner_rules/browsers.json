@@ -6,8 +6,12 @@
       { "dir": "Cache", "label": "Cache" },
       { "dir": "Code Cache", "label": "Code Cache" },
       { "dir": "GpuCache", "label": "GPU Cache" },
+      { "dir": "GPUCache", "label": "GPU Cache" },
       { "dir": "DawnWebGPUCache", "label": "WebGPU Shader Cache", "description": "Dawn's compiled WebGPU shaders — rebuilt on demand" },
-      { "dir": "DawnGraphiteCache", "label": "Graphite Shader Cache", "description": "Dawn/Skia Graphite pipeline cache — rebuilt on demand" }
+      { "dir": "DawnGraphiteCache", "label": "Graphite Shader Cache", "description": "Dawn/Skia Graphite pipeline cache — rebuilt on demand" },
+      { "dir": "Service Worker/CacheStorage", "label": "Service Worker Cache", "description": "Cached PWA/site assets from service workers — rebuilt on next visit" },
+      { "dir": "Service Worker/ScriptCache", "label": "Service Worker Script Cache", "description": "Compiled service worker scripts — rebuilt on next visit" },
+      { "dir": "Shared Dictionary/cache", "label": "Shared Dictionary Cache", "description": "Compression dictionary cache — rebuilt on demand" }
     ],
     "shared": [
       { "dir": "component_crx_cache", "label": "Component Extension Cache", "description": "Downloaded CRX packages for component extensions — re-fetched on next update check, not the installed extensions themselves" },

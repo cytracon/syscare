@@ -22,6 +22,38 @@ class CleanerCatalogueTests(unittest.TestCase):
         with mock.patch.dict(os.environ, {"XDG_CACHE_HOME": "/tmp/syscare-cache"}):
             self.assertEqual(cleaner._expand_path("${CACHE}/tool"), Path("/tmp/syscare-cache/tool"))
 
+    def test_xdg_browser_and_dev_caches_are_catalogued(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            config = root / "config"
+            cache = root / "cache"
+            chrome_http = cache / "google-chrome" / "Default" / "Cache"
+            chrome_sw = (
+                config / "google-chrome" / "Default" / "Service Worker" / "CacheStorage"
+            )
+            yay = cache / "yay"
+            playwright = cache / "ms-playwright"
+            mise = cache / "mise"
+            for path in (chrome_http, chrome_sw, yay, playwright, mise):
+                path.mkdir(parents=True)
+            env = {
+                "HOME": str(root),
+                "XDG_CONFIG_HOME": str(config),
+                "XDG_CACHE_HOME": str(cache),
+            }
+            with mock.patch.dict(os.environ, env, clear=False):
+                targets = cleaner.scan_targets_structure_only()
+            exposed = {str(path) for target in targets for path in target.paths}
+            self.assertIn(str(chrome_http), exposed)
+            self.assertIn(str(chrome_sw), exposed)
+            self.assertIn(str(yay), exposed)
+            self.assertIn(str(playwright), exposed)
+            self.assertIn(str(mise), exposed)
+            chrome = next(target for target in targets if target.id == "browser-chrome")
+            self.assertEqual(chrome.risk, "moderate")
+            self.assertFalse(chrome.selected)
+            self.assertNotIn(str(cache / "google-chrome" / "Default" / "Storage"), exposed)
+
 
 class HistoryTests(unittest.TestCase):
     def test_history_round_trip_and_clear(self) -> None:

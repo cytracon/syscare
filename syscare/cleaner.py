@@ -285,6 +285,51 @@ def _slug(value: object) -> str:
     return re.sub(r"[^a-z0-9]+", "-", str(value).lower()).strip("-") or "target"
 
 
+def _chromium_data_roots(browser: dict) -> list[Path]:
+    """Config profile dir plus the XDG cache sibling Chromium uses for HTTP/code caches."""
+    roots: list[Path] = []
+    base = _expand_path(str(browser.get("base") or ""))
+    if browser.get("base"):
+        roots.append(base)
+    if browser.get("cache"):
+        roots.append(_expand_path(str(browser.get("cache"))))
+    else:
+        cfg = xdg_config_home()
+        try:
+            if base.is_absolute() and base.is_relative_to(cfg):
+                sibling = xdg_cache_home() / base.relative_to(cfg)
+                if sibling != base:
+                    roots.append(sibling)
+        except (ValueError, TypeError, OSError):
+            pass
+    unique: list[Path] = []
+    seen: set[str] = set()
+    for root in roots:
+        key = str(root)
+        if key not in seen:
+            seen.add(key)
+            unique.append(root)
+    return unique
+
+
+def _chromium_cache_paths(root: Path, profile_dirs: list, shared_dirs: list) -> list[Path]:
+    if not root.is_dir() or root.is_symlink():
+        return []
+    paths: list[Path] = []
+    profiles: list[Path] = []
+    default = root / "Default"
+    if default.is_dir() and not default.is_symlink():
+        profiles.append(default)
+    try:
+        profiles.extend(p for p in root.glob("Profile *") if p.is_dir() and not p.is_symlink())
+    except OSError:
+        pass
+    for profile in profiles:
+        paths.extend(profile / str(entry.get("dir")) for entry in profile_dirs)
+    paths.extend(root / str(entry.get("dir")) for entry in shared_dirs)
+    return paths
+
+
 def _browser_targets() -> list[CleanTarget]:
     data = _load_rule("browsers.json")
     cache_defs = data.get("chromiumCacheDirs", {})
@@ -292,17 +337,9 @@ def _browser_targets() -> list[CleanTarget]:
     shared_dirs = cache_defs.get("shared", [])
     targets: list[CleanTarget] = []
     for browser in data.get("chromium", []):
-        base = _expand_path(str(browser.get("base") or ""))
         paths: list[Path] = []
-        if base.is_dir() and not base.is_symlink():
-            profiles = [base / "Default"] if not (base / "Default").is_symlink() else []
-            try:
-                profiles.extend(p for p in base.glob("Profile *") if p.is_dir() and not p.is_symlink())
-            except OSError:
-                pass
-            for profile in profiles:
-                paths.extend(profile / str(entry.get("dir")) for entry in profile_dirs)
-            paths.extend(base / str(entry.get("dir")) for entry in shared_dirs)
+        for root in _chromium_data_roots(browser):
+            paths.extend(_chromium_cache_paths(root, profile_dirs, shared_dirs))
         present = [p for p in paths if p.exists()]
         if present:
             name = str(browser.get("key") or "Chromium").replace("GX", " GX").title()
@@ -310,7 +347,7 @@ def _browser_targets() -> list[CleanTarget]:
                 CleanTarget(
                     id=f"browser-{_slug(browser.get('key'))}",
                     title=f"{name} cache",
-                    description="Cache, code cache and GPU cache; no site storage, history or cookies",
+                    description="HTTP/code/GPU/service-worker caches; no cookies, history or saved sessions",
                     paths=present,
                     selected=False,
                     category="Browsers",
