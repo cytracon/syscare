@@ -87,6 +87,23 @@ if [[ -f "$AUTOSTART" ]] && grep -q '/usr/bin/syscare' "$AUTOSTART"; then
   echo "==> Rewrote Ubuntu autostart launcher → $BIN_DIR/${PKG_NAME} --tray"
 fi
 
+WRAP="$ROOT/omarchy/syscare-usr-wrapper"
+if [[ -x "$WRAP" ]]; then
+  leftover=0
+  [[ -d /usr/lib/syscare ]] && leftover=1
+  if [[ -e /usr/bin/syscare ]] && ! grep -q 'Omarchy build' /usr/bin/syscare 2>/dev/null; then
+    leftover=1
+  fi
+  if (( leftover )); then
+    echo "==> Replacing leftover Ubuntu SysCare under /usr…"
+    if pkexec bash -c "rm -rf /usr/lib/syscare; rm -f /usr/share/applications/com.bbachmann.syscare.desktop; install -m 755 '$WRAP' /usr/bin/syscare"; then
+      echo "==> /usr/bin/syscare now launches ~/.local"
+    else
+      echo "==> skipped (no polkit auth). sudo install -m 755 $WRAP /usr/bin/syscare"
+    fi
+  fi
+fi
+
 echo
 echo "Installed:"
 echo "  binary : $BIN_DIR/${PKG_NAME}"
